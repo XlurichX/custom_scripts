@@ -1,0 +1,43 @@
+---
+- name: Install & cfg nrpe check_disk
+  hosts: all
+  become: true
+  tasks:
+    - name: Install NRPE and required plugins
+      apt:
+        name: "{{ item }}"
+        state: present
+      loop:
+        - nagios-nrpe-server
+        - nagios-plugins
+
+    - name: Create dir nagios /apple
+      file:
+        path: /apple/etc/nagios
+        state: directory
+        mode: '0755'
+
+    - name: Copy nrpe.cfg to /apple
+      copy:
+        src: files/nagios/nrpe.cfg
+        dest: /apple/etc/nagios/nrpe.cfg
+        mode: '0644'
+
+    - name: Copy nrpe_local.cfg to /apple
+      copy:
+        src: files/nagios/nrpe_local.cfg
+        dest: /apple/etc/nagios/nrpe_local.cfg
+
+    - name: Link nrpe dir
+      file:
+        path: /etc/nagios
+        src: /apple/etc/nagios
+        force: yes
+        state: link
+
+    - name: Restart NRPE
+      systemd:
+        name: nagios-nrpe-server
+        state: restarted
+        enabled: true 
+

@@ -1,0 +1,147 @@
+---
+- hosts: all
+  tasks:
+    - block:
+        - name: Check if crypt container is available
+          stat:
+            path: /dev/mapper/apple
+          register: container
+
+        - name: End playbook if container is not available
+          meta: end_play
+          when: not container.stat.exists
+
+    - name: Install required packages
+      apt:
+        name: "{{ item }}"
+        state: present
+        update_cache: true
+      loop:
+        - ipset
+        - conntrack
+        - iptables
+        - iptables-persistent
+      tags: install
+
+    - name: Create dir for iptables
+      file:
+        path: "{{ item }}"
+        state: directory
+        recurse: yes
+        mode: '0755'
+      loop:
+        - /apple/etc/iptables/
+        - /etc/iptables/
+      tags: firewall
+
+    - name: Delete default iptables config files
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /etc/iptables/rules.v4
+        - /etc/iptables/rules.v6
+      tags: firewall
+
+    - name: Allow related and established connections
+      ansible.builtin.iptables:
+        chain: INPUT
+        ctstate: ESTABLISHED,RELATED
+        jump: ACCEPT
+      become: yes
+      tags: firewall
+
+    - name: Allow localhost connections
+      ansible.builtin.iptables:
+        chain: INPUT
+        in_interface: lo
+        jump: ACCEPT
+      become: yes
+      tags: firewall
+
+    - name: Allow tcp 22 port for IP set
+      ansible.builtin.iptables:
+        chain: INPUT
+        in_interface: "{{ ansible_default_ipv4.interface }}"
+        protocol: tcp
+        destination_port: 22
+        match: set
+        match_set: allow_ip
+        jump: ACCEPT
+      become: yes
+      tags: firewall
+
+    - name: Allow web ports
+      ansible.builtin.iptables:
+        chain: INPUT
+        in_interface: "{{ ansible_default_ipv4.interface }}"
+        protocol: tcp
+        destination_port: "{{ item }}"
+        jump: ACCEPT
+      loop:
+        - '80'
+        - '443'
+      become: yes
+      tags: firewall
+
+    - name: Allow DNS 
+      ansible.builtin.iptables:
+        chain: INPUT
+        in_interface: "{{ ansible_default_ipv4.interface }}"
+        protocol: udp
+        destination_port: 53
+        jump: ACCEPT
+      become: yes
+      tags: firewall
+
+    - name: Allow ICMP type 3/4 (Destination Unreachable)
+      ansible.builtin.iptables:
+        chain: INPUT
+        in_interface: "{{ ansible_default_ipv4.interface }}"
+        protocol: icmp
+        icmp_type: 3/4
+        jump: ACCEPT
+      become: yes
+      tags: firewall
+
+    - name: Allow ICMP type 8 (Echo Request = ping)
+      ansible.builtin.iptables:
+        chain: INPUT
+        in_interface: "{{ ansible_default_ipv4.interface }}"
+        protocol: icmp
+        icmp_type: 8
+        jump: ACCEPT
+      become: yes
+      tags: firewall
+
+    - name: Allow ICMP type 11 (Time Exceeded)
+      ansible.builtin.iptables:
+        chain: INPUT
+        in_interface: "{{ ansible_default_ipv4.interface }}"
+        protocol: icmp
+        icmp_type: 11
+        jump: ACCEPT
+      become: yes
+      tags: firewall
+
+    - name: Set default policy for INPUT chain to DROP
+      ansible.builtin.iptables:
+        chain: INPUT
+        policy: DROP
+      become: yes
+      tags: firewall
+
+    - name: Save firewall rules
+      shell: iptables-save > /apple/etc/iptables/ipv4.rules
+      args:
+        chdir: /apple/etc/iptables/
+        creates: /apple/etc/iptables/ipv4.rules
+      tags: firewall
+
+    - name: Link to iptables persistent config
+      file:
+        path: /etc/iptables/rules.v4
+        src: /apple/etc/iptables/ipv4.rules
+        force: yes
+        state: link
+      tags: firewall

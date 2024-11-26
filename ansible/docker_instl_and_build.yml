@@ -1,0 +1,55 @@
+---
+- name: Docker install
+  hosts: all
+  become: yes
+  tasks:
+    - name: Install required packages
+      apt:
+        name:
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - gnupg
+          - lsb-release
+          - bash-completion
+          - vim
+        state: present
+
+    - name: Curl GPG key
+      shell: 
+        curl -fsSL https://download.docker.com/linux/debian/gpg > /tmp/docker.gpg 
+    - name: GPG add
+      shell:
+        gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg /tmp/docker.gpg
+
+    - name: Add Docker repository
+      shell:
+          echo "deb [arch=amd64 signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/debian $(lsb_release -cs) stable" > /etc/apt/sources.list.d/docker.list
+
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+
+    - name: apt install Docker
+      apt:
+        name: docker-ce
+        state: present
+
+    - name: Check Docker is running
+      service:
+        name: docker
+        state: started
+        enabled: yes
+
+    - name: Copy Dockerfile
+      copy:
+        src: files/docker/dev/apple/Dockerfile
+        dest: /home/apple/Dockerfile
+
+    - name: Build Docker image
+      community.docker.docker_image:
+        name: test/apple
+        source: build
+        build:
+          dockerfile: /home/apple/Dockerfile
+          path: /home/apple/
